@@ -2,6 +2,7 @@ import torch
 from torch._C import Value
 import torch.nn as nn
 from snntorch import spikegen
+from typing import Callable
 
 ###############################################################
 # When adding new loss/reg functions, update criterion_dict   #
@@ -78,13 +79,14 @@ class ce_rate_loss(LossFunctions):
 
     """
 
-    def __init__(self):
+    def __init__(self, weight=None):
         self.__name__ = "ce_rate_loss"
+        self.weight = weigth
 
     def __call__(self, spk_out, targets):
         device, num_steps, _ = self._prediction_check(spk_out)
         log_softmax_fn = nn.LogSoftmax(dim=-1)
-        loss_fn = nn.NLLLoss()
+        loss_fn = nn.NLLLoss(self.weight)
 
         log_p_y = log_softmax_fn(spk_out)
         loss = torch.zeros((1), dtype=dtype, device=device)
@@ -138,14 +140,15 @@ class ce_count_loss(LossFunctions):
 
     """
 
-    def __init__(self, population_code=False, num_classes=False):
+    def __init__(self, population_code=False, num_classes=False, weight=None):
         self.population_code = population_code
         self.num_classes = num_classes
+        self.weight = weight
         self.__name__ = "ce_count_loss"
 
     def __call__(self, spk_out, targets):
         log_softmax_fn = nn.LogSoftmax(dim=-1)
-        loss_fn = nn.NLLLoss()
+        loss_fn = nn.NLLLoss(weight=self.weight)
 
         if self.population_code:
             _, _, num_outputs = self._prediction_check(spk_out)
@@ -190,12 +193,13 @@ class ce_max_membrane_loss(LossFunctions):
 
     """
 
-    def __init__(self):
+    def __init__(self, weight=None):
+        self.weight = weight
         self.__name__ = "ce_max_membrane_loss"
 
     def __call__(self, mem_out, targets):
         log_softmax_fn = nn.LogSoftmax(dim=-1)
-        loss_fn = nn.NLLLoss()
+        loss_fn = nn.NLLLoss(weight=self.weight)
 
         max_mem_out, _ = torch.max(mem_out, 0)
         log_p_y = log_softmax_fn(max_mem_out)
@@ -256,16 +260,20 @@ class mse_count_loss(LossFunctions):
         incorrect_rate=0,
         population_code=False,
         num_classes=False,
+        weight=None
     ):
         self.correct_rate = correct_rate
         self.incorrect_rate = incorrect_rate
         self.population_code = population_code
         self.num_classes = num_classes
+        self.weight = weight
         self.__name__ = "mse_count_loss"
 
     def __call__(self, spk_out, targets):
         _, num_steps, num_outputs = self._prediction_check(spk_out)
         loss_fn = nn.MSELoss()
+
+        # TODO (saif) use weighting on classes
 
         if not self.population_code:
 
@@ -345,14 +353,18 @@ class mse_membrane_loss(LossFunctions):
 
     #  to-do: add **kwargs to modify other keyword args in
     #  spikegen.targets_convert
-    def __init__(self, time_var_targets=False, on_target=1, off_target=0):
+    def __init__(self, time_var_targets=False, on_target=1, off_target=0, weight=None):
         self.time_var_targets = time_var_targets
         self.on_target = on_target
         self.off_target = off_target
+        self.weight = weight
         self.__name__ = "mse_membrane_loss"
 
     def __call__(self, mem_out, targets):
         device, num_steps, num_outputs = self._prediction_check(mem_out)
+
+        # TODO (saif) use weighting on classes
+
         targets = spikegen.targets_convert(
             targets,
             num_classes=num_outputs,
@@ -735,6 +747,7 @@ class mse_temporal_loss:
         off_target=-1,
         tolerance=0,
         multi_spike=False,
+        weight=None
     ):
         super(mse_temporal_loss, self).__init__()
 
@@ -742,9 +755,12 @@ class mse_temporal_loss:
         self.spk_time_fn = SpikeTime(
             target_is_time, on_target, off_target, tolerance, multi_spike
         )
+        self.weight = weight
         self.__name__ = "mse_temporal_loss"
 
     def __call__(self, spk_rec, targets):
+        # TODO (saif) use weighting on classes
+
         spk_time, targets = self.spk_time_fn(
             spk_rec, targets
         )  # return encoded targets
@@ -799,17 +815,20 @@ class ce_temporal_loss:
 
     """
 
-    def __init__(self, inverse="negate"):
+    def __init__(self, inverse="negate", weight=None):
         super(ce_temporal_loss, self).__init__()
 
         self.loss_fn = nn.CrossEntropyLoss()
         self.spk_time_fn = SpikeTime(target_is_time=False)
         self.inverse = inverse
         self._ce_temporal_cases()
+        self.weight = None
 
         self.__name__ = "ce_temporal_loss"
 
     def __call__(self, spk_rec, targets):
+        # TODO (saif) use weighting on classes
+
         spk_time, _ = self.spk_time_fn(
             spk_rec, targets
         )  # return encoded targets
